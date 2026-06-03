@@ -1,0 +1,51 @@
+import boto3
+import os
+import urllib.parse
+
+# Initialize AWS clients
+s3 = boto3.client('s3')
+polly = boto3.client('polly')
+
+# Environment variables for your buckets
+DEST_BUCKET = os.environ['DEST_BUCKET_NAME']
+
+def lambda_handler(event, context):
+    # Get the bucket and key from the event
+    source_bucket = event['Records'][0]['s3']['bucket']['name']
+    source_key = event['Records'][0]['s3']['object']['key']
+    
+    # Process only .txt files to avoid infinite loops or errors
+    if not source_key.endswith('.txt'):
+        print(f"Skipping non-text file: {source_key}")
+        return
+
+    try:
+        # 1. Get the text file from S3
+        response = s3.get_object(Bucket=source_bucket, Key=source_key)
+        text_content = response['Body'].read().decode('utf-8')
+
+        # 2. Call Amazon Polly to synthesize speech
+        polly_response = polly.synthesize_speech(
+            Text=text_content,
+            OutputFormat='mp3',
+            VoiceId='Joanna'  # You can choose other VoiceIds (e.g., 'Matthew', 'Kendra')
+        )
+
+        # 3. Save the audio stream to the destination bucket
+        # Change file extension from .txt to .mp3
+        dest_key = os.path.splitext(source_key)[0] + '.mp3'
+        
+        if "AudioStream" in polly_response:
+            with polly_response["AudioStream"] as stream:
+                s3.put_object(
+                    Bucket=DEST_BUCKET,
+                    Key=dest_key,
+                    Body=stream.read(),
+                    ContentType='audio/mpeg'
+                )
+        
+        print(f"Successfully converted {source_key} to {dest_key}")
+
+    except Exception as e:
+        print(f"Error processing file {source_key}: {str(e)}")
+        raise e
