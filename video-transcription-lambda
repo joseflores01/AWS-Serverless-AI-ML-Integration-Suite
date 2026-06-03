@@ -1,0 +1,31 @@
+import boto3
+import json
+import uuid
+import os # Import the os module
+
+# Initialize client outside the handler for better performance (reused across invocations)
+transcribe = boto3.client('transcribe')
+
+def lambda_handler(event, context):
+    # Fetch values from environment variables instead of hardcoding
+    output_bucket = os.environ.get('OUTPUT_BUCKET_NAME')
+    
+    bucket_name = event['Records'][0]['s3']['bucket']['name']
+    file_key = event['Records'][0]['s3']['object']['key']
+    
+    file_uri = f"s3://{bucket_name}/{file_key}"
+    job_name = f"TranscribeJob-{uuid.uuid4()}"
+    
+    # Start the transcription job
+    response = transcribe.start_transcription_job(
+        TranscriptionJobName=job_name,
+        Media={'MediaFileUri': file_uri},
+        MediaFormat='mp4',
+        LanguageCode='en-US',
+        OutputBucketName=output_bucket
+    )
+    
+    return {
+        'statusCode': 200,
+        'body': json.dumps(f"Started job: {job_name} for file {file_key}")
+    }
