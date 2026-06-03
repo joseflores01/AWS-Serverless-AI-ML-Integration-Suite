@@ -1,0 +1,43 @@
+import json
+import boto3
+import os
+
+# Initialize clients outside the handler to reuse connections
+comprehend = boto3.client('comprehend')
+sns = boto3.client('sns')
+
+# Get the SNS Topic ARN from an environment variable
+SNS_TOPIC_ARN = os.environ.get('SNS_TOPIC_ARN')
+
+def lambda_handler(event, context):
+    for record in event['Records']:
+        # 1. Extract text from SQS message body
+        message_body = record['body']
+        
+        # 2. Analyze sentiment using Comprehend
+        try:
+            sentiment_response = comprehend.detect_sentiment(
+                Text=message_body, 
+                LanguageCode='en'
+            )
+            sentiment = sentiment_response['Sentiment']
+            
+            # 3. Prepare the result message
+            result_payload = {
+                "original_message": message_body,
+                "sentiment": sentiment
+            }
+            
+            # 4. Publish to SNS
+            sns.publish(
+                TopicArn=SNS_TOPIC_ARN,
+                Message=json.dumps(result_payload),
+                Subject="Sentiment Analysis Result"
+            )
+            print(f"Processed message with sentiment: {sentiment}")
+            
+        except Exception as e:
+            print(f"Error processing message: {str(e)}")
+            continue # Continue to next record even if one fails
+
+    return {'statusCode': 200, 'body': 'Processing complete'}
